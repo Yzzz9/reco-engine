@@ -20,8 +20,10 @@ type ApiLogger struct {
 
 func (l *ApiLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
   start := time.Now()
-  l.logger.Info("", slog.String("enter", r.URL.Path))
+  l.logger.Info("", slog.String("enter", r.URL.Path), slog.String("method", r.Method))
+
   l.handler.ServeHTTP(w, r)
+
   l.logger.Info("", slog.String("exit", r.URL.Path),
     slog.String("endtime", time.Since(start).String()))
 }
@@ -41,28 +43,14 @@ func (a *Authenticator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
   if r.URL.Path != "/login" {
     session, _ := a.store.Get(r, "cookie")
     if auth, ok  := session.Values["auth"].(bool); !ok || !auth {
+      a.logger.Error("Unauthorized user")
       http.Error(w, "Forbidden Access", http.StatusForbidden)
       return
     }
   }
+
   // serve Http
   a.handler.ServeHTTP(w, r)
-  // get status code from header
-  header := w.Header().Get("my-status-code")
-  defer w.Header().Del("my-status-code")
-  a.logger.Info("", slog.String("header", header))
-  // if login successful then mark auth as true
-  if r.URL.Path == "/login" && header == "200" {
-    session, _ := a.store.Get(r, "cookie")
-    session.Values["auth"] = true
-    session.Save(r, w) 
-  }
-  // if logout successful then mark auth as false
-  if r.URL.Path == "/logout" && header == "200" {
-    session, _ := a.store.Get(r, "cookie")
-    session.Values["auth"] = false
-    session.Save(r, w) 
-  }
 }
 
 func NewAuthenticator(handler http.Handler, 
@@ -70,4 +58,7 @@ func NewAuthenticator(handler http.Handler,
   return &Authenticator{ handler, logger, store }
 }
 
-
+func getUser(r *http.Request, store *sessions.CookieStore) string {
+  session, _ := store.Get(r, "cookie")
+  return session.Values["auth"].(string) 
+}
